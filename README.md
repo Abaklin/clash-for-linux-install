@@ -1,5 +1,32 @@
 # Linux 一键安装 Clash
 
+> 📌 **本仓库为 Fork 版本**
+>
+> Fork 自上游 [`nelvko/clash-for-linux-install`](https://github.com/nelvko/clash-for-linux-install)（经 [`qiaohaijun123/clash-for-linux-install`](https://github.com/qiaohaijun123/clash-for-linux-install) 转手）。
+>
+> 与上游差异 / What's different：
+>
+> | 项目 | 上游 | 本仓库 |
+> |---|---|---|
+> | mihomo 内核 | `v1.19.2`（2025-02） | **`v1.19.27`**（2026-06） |
+> | 支持的协议 | 截止上游打包日 | 新增 **`anytls`**、新版 `hysteria2` / `tuic` / `vless` 等 |
+> | 内核变体 | `compatible`（x86_64） | `compatible`（x86_64，保持一致） |
+> | 其他源码 | — | **完全保持上游一致，未做任何修改** |
+>
+> **为什么有这个 fork**：上游打包的 mihomo `v1.19.2` 不识别 `anytls` 协议，订阅含 `anytls` 节点时 `install.sh` 会在配置校验阶段报 `unsupport proxy type: anytls` 并退出。本仓库仅升级内置内核 gz 包 (`resources/zip/mihomo-linux-amd64-compatible-v1.19.27.gz`)，让安装流程能跑通。
+>
+> **安装方式与上游完全一致**，向下兼容：
+>
+> ```bash
+> git clone --branch main --depth 1 https://gh-proxy.com/https://github.com/Abaklin/clash-for-linux-install.git \
+>   && cd clash-for-linux-install \
+>   && sudo bash install.sh
+> ```
+>
+> **想自己升级内核（适配未来更新的协议）**：参考 `resources/zip/` 下的 gz 命名格式，从 <https://github.com/MetaCubeX/mihomo/releases/latest> 下载对应 `mihomo-linux-amd64-compatible-*.gz`，替换后重跑 `install.sh` 即可。详细步骤见本 README 末尾的【内核升级】小节。
+
+---
+
 ![GitHub License](https://img.shields.io/github/license/nelvko/clash-for-linux-install)
 ![GitHub top language](https://img.shields.io/github/languages/top/nelvko/clash-for-linux-install)
 ![GitHub Repo stars](https://img.shields.io/github/stars/nelvko/clash-for-linux-install)
@@ -190,3 +217,77 @@ sudo bash uninstall.sh
 
 1. 编写本项目主要目的为学习和研究 `Shell` 编程，不得将本项目中任何内容用于违反国家/地区/组织等的法律法规或相关规定的其他用途。
 2. 本项目保留随时对免责声明进行补充或更改的权利，直接或间接使用本项目内容的个人或组织，视为接受本项目的特别声明。
+
+---
+
+## 🔧 内核升级（Fork 特有章节）
+
+当上游 `mihomo` 内核版本跟不上你的订阅里的新协议（典型现象：`install.sh` 在 `🍃 下载成功：内核验证配置...` 之后报 `proxy 0: unsupport proxy type: <协议名>`，例如 `anytls`、`hysteria2`），按下面步骤升级内置内核即可。
+
+### 步骤
+
+```bash
+# 1. 查最新版本号（从官方 releases）
+curl -sSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+  | grep '"tag_name"' | head -1
+# -> "tag_name": "v1.19.27"
+
+# 2. 下载对应变体的 gz（国内用 gh-proxy 加速）
+VERSION=v1.19.27
+curl -fL --max-time 120 -o /tmp/mihomo-new.gz \
+  "https://gh-proxy.com/https://github.com/MetaCubeX/mihomo/releases/download/${VERSION}/mihomo-linux-amd64-compatible-${VERSION}.gz"
+
+# 3. 验证下载的 gz 可解压且版本正确
+gzip -dc /tmp/mihomo-new.gz > /tmp/mihomo-test && chmod +x /tmp/mihomo-test
+/tmp/mihomo-test -v
+# 应输出: Mihomo Meta v1.19.27 linux amd64 ...
+
+# 4. 在项目根目录替换 gz（注意：旧 gz 要先删，避免 glob 同时匹配两个文件）
+cd /path/to/clash-for-linux-install
+rm -f resources/zip/mihomo-*.gz
+cp /tmp/mihomo-new.gz resources/zip/mihomo-linux-amd64-compatible-${VERSION}.gz
+
+# 5. 如果之前有半安装残留，清掉再重装
+sudo bash uninstall.sh 2>/dev/null   # 若 /opt/clash 不存在会报错，无所谓
+rm -f resources/bin/mihomo resources/bin/yq resources/bin/yq.1 resources/config.yaml
+rm -rf resources/bin/subconverter
+
+# 6. 重跑安装
+sudo bash install.sh
+```
+
+### 内核变体说明
+
+| 文件名包含 | 适用 CPU |
+|---|---|
+| `compatible` | 任何 x86_64（默认，推荐） |
+| `v1`（不含 compatible） | 需 SSE4.2 |
+| `v3` | 需 AVX2，性能略好 |
+| `arm64` | ARM 设备（树莓派等） |
+
+不确定 CPU 能力时选 `compatible`，性能损失对代理场景可忽略。
+
+### 验证内核已生效
+
+```bash
+/opt/clash/bin/mihomo -v
+# 应该是新版本号，不是 v1.19.2
+
+# 实际跑流量
+curl -x http://127.0.0.1:7890 -I https://www.google.com
+# 应返回 HTTP 200/301/302
+```
+
+---
+
+## 致谢
+
+- 上游原作者：[@nelvko](https://github.com/nelvko) — 感谢提供原始项目
+- 中间 fork：[@qiaohaijun123](https://github.com/qiaohaijun123)
+- 内核维护：[@MetaCubeX/mihomo](https://github.com/MetaCubeX/mihomo)
+
+## 特别声明
+
+本 fork 仅为解决个人订阅中 `anytls` 协议无法识别的问题而创建，**只替换了内置内核的 gz 包**，其他所有源码与上游完全一致。本项目的一切声明、责任、许可证均沿用上游 [`nelvko/clash-for-linux-install`](https://github.com/nelvko/clash-for-linux-install) 的版本。
+
+使用者自行承担因使用本项目导致的任何后果。本项目不得用于违反所在地区法律法规的用途。
